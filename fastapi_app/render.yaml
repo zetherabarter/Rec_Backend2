@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: recruitment-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: starter
+    branch: main
+    healthCheckPath: /
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 8000
+      - key: HOST
+        value: 0.0.0.0
+      - key: APP_NAME
+        value: Recruitment Portal API
+      - key: APP_VERSION
+        value: 1.0.0
+      - key: API_PREFIX
+        value: /api
+      - key: DATABASE_NAME
+        value: recruitment_portal
+      # Add these environment variables in Render dashboard:
+      # - MONGODB_URL (your MongoDB connection string)
+      # - SECRET_KEY (generate a secure secret key)
