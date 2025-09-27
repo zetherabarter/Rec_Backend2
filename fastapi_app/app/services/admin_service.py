@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from datetime import datetime
 from ..models.admin import Admin, AdminCreate, AdminLogin
 from ..utils.auth import AuthUtils
@@ -64,6 +64,30 @@ class AdminService:
         try:
             engine = get_database()
             return await engine.find_one(Admin, Admin.id == admin_id)
+        except Exception:
+            return None
+        
+    @staticmethod
+    async def delete_admin(admin_id: str) -> bool:
+        """Delete admin by ID"""
+        try:
+            engine = get_database()
+            admin = await engine.find_one(Admin, Admin.id == admin_id)
+            if not admin:
+                return False
+            await engine.delete(admin)
+            return True
+        except Exception:
+            return False
+
+    
+        
+    @staticmethod
+    async def get_all_admins() -> List[Admin]:
+        """Get all admins"""
+        try:
+            engine = get_database()
+            return await engine.find(Admin)
         except Exception:
             return None
     
