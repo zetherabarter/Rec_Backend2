@@ -40,6 +40,7 @@ class UserBase(BaseModel):
     what_motivates_you: Optional[str] = None
     linkedIn: Optional[str] = None
     domains: List[str] = Field(default_factory=list)
+    groupNumber: Optional[int] = None
     isHosteller: bool = Field(default=True)
     pastAchievement: Optional[str] = None
 
@@ -81,15 +82,41 @@ class GDUpdate(BaseModel):
             raise ValueError(f'Status must be one of: {[s.value for s in status]}')
         return v
 
-class PIUpdate(BaseModel):
+# Each PI entry corresponds to one interviewer/domain result
+class PIEntry(BaseModel):
     status: str
-    datetime: datetime
+    domain: str
     remarks: str
+    interviewer: Optional[str] = None
+
+    @validator('status')
+    def validate_entry_status(cls, v):
+        if v not in [s.value for s in status]:
+            raise ValueError(f'Status must be one of: {[s.value for s in status]}')
+        return v
+
+    @validator('domain')
+    def validate_entry_domain(cls, v):
+        if v not in [d.value for d in DomainEnum]:
+            raise ValueError(f'Domain must be one of: {[d.value for d in DomainEnum]}')
+        return v
+
+
+class PIUpdate(BaseModel):
+    entries: List[PIEntry] = Field(default_factory=list)
+    datetime: datetime
+    status: str = Field(default="pending")
+
+    @validator('entries')
+    def validate_entries_not_empty(cls, v):
+        if not v:
+            raise ValueError('entries must contain at least one PI entry')
+        return v
     
     @validator('status')
     def validate_status(cls, v):
         if v not in [s.value for s in status]:
-            raise ValueError(f'Status must be one of: {[s.value for s in status]}')
+            raise ValueError(f'Status must b v cbe one of: {[s.value for s in status]}')
         return v
 
 class TaskItem(BaseModel):
@@ -158,6 +185,7 @@ class UserResponse(BaseModel):
     task: Dict[str, Any] = Field(default_factory=dict)
     shortlisted: bool = Field(default=False)
     isPresent: bool = Field(default=False)
+    groupNumber: Optional[int] = None
     assignedSlot: Optional[str] = None
 
     class Config:
