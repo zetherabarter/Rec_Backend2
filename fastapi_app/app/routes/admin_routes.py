@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends
 from ..models.admin import AdminCreate, AdminLogin, AdminResponse
 from ..models.auth import TokenResponse, RefreshTokenRequest
@@ -132,6 +133,48 @@ async def refresh_admin_token(refresh_request: RefreshTokenRequest):
         "token_type": "bearer",
         "message": message
     }
+
+@router.get("/all", response_model=List[AdminResponse])
+async def get_all_admin_info(current_admin = Depends(get_current_admin)):
+    """
+    Get admins information
+    """
+    logger.info("🔥 FETCHING ALL ADMINS INFO")
+    admins = await AdminService.get_all_admins()
+    admin_responses = []
+    for admin in admins:
+        admin_dict = admin.dict()
+        admin_dict['id'] = str(admin.id)
+        admin_responses.append(AdminResponse(**admin_dict))
+    logger.info(f"🔥 TOTAL ADMINS FETCHED: {len(admin_responses)}")
+    return admin_responses
+
+
+@router.delete("/delete/{admin_id}", response_model=dict,  status_code=status.HTTP_200_OK)
+async def delete_admin(
+        admin_id: str,
+        current_admin = Depends(require_roles([UserRole.SUPERADMIN]))
+    ):
+        """
+        Delete an admin by ID (SuperAdmin only)
+        """
+        logger.info(f"🔥 DELETE ADMIN REQUEST - Admin ID: {admin_id} by SuperAdmin: {current_admin.email} ({current_admin.id})")
+        try:
+            success, message = await AdminService.delete_admin(admin_id)
+            if not success:
+                logger.warning(f"🔥 DELETE FAILED - Reason: {message}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=message
+                )
+            logger.info(f"🔥 ADMIN DELETED SUCCESSFULLY - Admin ID: {admin_id}")
+            return {"message": message}
+        except Exception as e:
+            logger.error(f"🔥 ERROR DELETING ADMIN: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete admin: {str(e)}"
+            )
 
 @router.get("/me", response_model=AdminResponse)
 async def get_current_admin_info(current_admin = Depends(get_current_admin)):
