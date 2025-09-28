@@ -72,14 +72,19 @@ class AdminService:
         """Delete admin by ID"""
         try:
             engine = get_database()
+    
+            # Check if admin exists
             admin = await engine.find_one(Admin, Admin.id == admin_id)
-            if not admin:
+            if admin is None:
                 return False
-            await engine.delete(admin)
+    
+            # Delete directly by filter for efficiency
+            await engine.delete(Admin, Admin.id == admin_id)
             return True
-        except Exception:
+    
+        except Exception as e:
+            print(f"Error deleting admin: {e}")
             return False
-
     
         
     @staticmethod
