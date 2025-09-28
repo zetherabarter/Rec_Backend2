@@ -8,6 +8,7 @@ from odmantic import ObjectId
 
 class AdminService:
     """Service class for admin operations"""
+    logger = logging.getLogger("admin_service")
     
     @staticmethod
     async def create_admin(admin_data: AdminCreate) -> Admin:
@@ -65,8 +66,20 @@ class AdminService:
         """Get admin by ID"""
         try:
             engine = get_database()
-            return await engine.find_one(Admin, Admin.id == admin_id)
+            # Convert string ID to ObjectId if needed (Odmantic uses ObjectId)
+            if isinstance(admin_id, str):
+                try:
+                    obj_id = ObjectId(admin_id)
+                except Exception as e:
+                    AdminService.logger.warning(f"get_admin: invalid admin_id '{admin_id}': {e}")
+                    return None
+            else:
+                obj_id = admin_id
+
+            AdminService.logger.debug(f"get_admin: looking up Admin with id={obj_id} (original={admin_id})")
+            return await engine.find_one(Admin, Admin.id == obj_id)
         except Exception:
+            AdminService.logger.exception("Exception in get_admin")
             return None
         
     @staticmethod
@@ -107,7 +120,8 @@ class AdminService:
             engine = get_database()
             return await engine.find(Admin)
         except Exception:
-            return None
+            AdminService.logger.exception("Exception in get_all_admins")
+            return []
     
     @staticmethod
     async def get_admin_by_email(email: str) -> Optional[Admin]:
