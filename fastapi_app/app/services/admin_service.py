@@ -68,23 +68,34 @@ class AdminService:
             return None
         
     @staticmethod
-    async def delete_admin(admin_id: str) -> bool:
-        """Delete admin by ID"""
+    async def delete_admin(admin_id: str) -> Tuple[bool, str]:
+        """Delete admin by ID. Returns (success, message)"""
         try:
             engine = get_database()
-    
-            # Check if admin exists
-            admin = await engine.find_one(Admin, Admin.id == admin_id)
-            if admin is None:
-                return False
-    
-            # Delete directly by filter for efficiency
-            await engine.delete(Admin, Admin.id == admin_id)
-            return True
-    
+            # Convert string ID to ObjectId if needed
+            if isinstance(admin_id, str):
+                try:
+                    obj_id = ObjectId(admin_id)
+                except Exception as e:
+                    AdminService.logger.warning(f"delete_admin: invalid admin_id '{admin_id}': {e}")
+                    return False, "Invalid admin id"
+            else:
+                obj_id = admin_id
+
+            AdminService.logger.debug(f"delete_admin: looking up Admin with id={obj_id} (original={admin_id})")
+            admin = await engine.find_one(Admin, Admin.id == obj_id)
+            if not admin:
+                AdminService.logger.info(f"delete_admin: admin not found for id={admin_id}")
+                return False, "Admin not found"
+
+            await engine.delete(admin)
+            AdminService.logger.info(f"delete_admin: deleted admin id={admin_id} email={admin.email}")
+            return True, "Admin deleted successfully"
         except Exception as e:
-            print(f"Error deleting admin: {e}")
-            return False
+            # Return explicit failure message for the route to log/return
+            AdminService.logger.exception(f"Exception while deleting admin id={admin_id}")
+            return False, f"Deletion failed: {str(e)}"
+
     
         
     @staticmethod
