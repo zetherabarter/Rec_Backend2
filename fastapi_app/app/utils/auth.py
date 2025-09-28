@@ -2,17 +2,17 @@ import jwt
 import random
 import string
 import logging
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
-from passlib.context import CryptContext
+import bcrypt
 from ..core.config import settings
 
-# Password context for hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# bcrypt has a maximum input length of 72 bytes. We'll normalize inputs to avoid
-# passlib raising an error. Truncation is applied deterministically both when
-# hashing and when verifying so the result remains consistent.
+# Note: bcrypt has a maximum input length of 72 bytes. To avoid issues with
+# long passwords (and also to avoid depending on passlib's bcrypt backend
+# detection), we pre-hash passwords with SHA-256 and then feed the digest to
+# bcrypt. This is equivalent to what `passlib`'s `bcrypt_sha256` handler does
+# and guarantees a fixed-size (32 byte) input to bcrypt.
 _BCRYPT_MAX_BYTES = 72
 logger = logging.getLogger("auth_utils")
 
@@ -49,12 +49,21 @@ class AuthUtils:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash a password (normalizes to bcrypt max bytes)."""
-        normalized = AuthUtils._normalize_password_for_bcrypt(password)
+        """Hash a password using SHA-256 pre-hash + bcrypt.
+
+        Returns the bcrypt hash as a UTF-8 string.
+        """
+        if password is None:
+            password = ""
+
+        # Pre-hash with SHA-256 to produce a fixed-length input for bcrypt.
+        pw_bytes = password.encode("utf-8", errors="ignore")
+        sha = hashlib.sha256(pw_bytes).digest()
         try:
-            return pwd_context.hash(normalized)
+            hashed = bcrypt.hashpw(sha, bcrypt.gensalt())
+            return hashed.decode("utf-8")
         except Exception as e:
-            logger.exception("Error hashing password: %s", e)
+            logger.exception("Error hashing password with bcrypt: %s", e)
             raise
 
     @staticmethod
@@ -64,30 +73,49 @@ class AuthUtils:
         Returns False if verification fails or an internal error occurs.
         """
         try:
-            # First, try verifying the password as provided. This preserves
-            # compatibility with existing stored hashes that were created
-            # without normalization/truncation.
-            try:
-                direct_ok = pwd_context.verify(plain_password, hashed_password)
-            except ValueError as e:
-                # Underlying bcrypt backend may raise ValueError for inputs
-                # > 72 bytes. Log and treat as a non-match so we can attempt
-                # the normalized variant below.
-                logger.warning("Direct password verify raised ValueError: %s", e)
-                direct_ok = False
+            if plain_password is None:
+                plain_password = ""
 
-            if direct_ok:
-                return True
+            # Ensure hashed_password is bytes for bcrypt functions
+            if isinstance(hashed_password, str):
+                hashed_bytes = hashed_password.encode("utf-8")
+            else:
+                hashed_bytes = hashed_password
 
-            # If direct verification failed, try normalized/truncated variant.
-            normalized = AuthUtils._normalize_password_for_bcrypt(plain_password)
-            try:
-                normalized_ok = pwd_context.verify(normalized, hashed_password)
-            except ValueError as e:
-                logger.warning("Normalized password verify raised ValueError: %s", e)
+            # If the stored hash looks like a bcrypt hash ($2b$, $2a$, $2y$...),
+            # first try the SHA-256 pre-hash + bcrypt check (our new scheme).
+            if isinstance(hashed_password, str) and hashed_password.startswith("$2"):
+                try:
+                    sha = hashlib.sha256(plain_password.encode("utf-8", errors="ignore")).digest()
+                    if bcrypt.checkpw(sha, hashed_bytes):
+                        return True
+                except Exception as e:
+                    # bcrypt.checkpw can raise ValueError for >72 bytes if raw
+                    # bytes are used; our sha pre-hash is 32 bytes so this
+                    # should not happen, but catch defensively.
+                    logger.warning("bcrypt checkpw (sha) raised: %s", e)
+
+                # Fallback: try verifying against raw password bytes (legacy)
+                try:
+                    pw_bytes = plain_password.encode("utf-8", errors="ignore")
+                    # bcrypt raises ValueError if input > 72 bytes; truncate
+                    if len(pw_bytes) > _BCRYPT_MAX_BYTES:
+                        logger.warning(
+                            "Password exceeded %d bytes when encoded; truncating for bcrypt compatibility",
+                            _BCRYPT_MAX_BYTES,
+                        )
+                        pw_bytes = pw_bytes[:_BCRYPT_MAX_BYTES]
+
+                    if bcrypt.checkpw(pw_bytes, hashed_bytes):
+                        return True
+                except Exception as e:
+                    logger.warning("bcrypt checkpw (raw) raised: %s", e)
+
                 return False
 
-            return normalized_ok
+            # If stored hash doesn't look like bcrypt, we can't verify here.
+            logger.warning("Unsupported hash format for verification")
+            return False
         except Exception as e:
             logger.exception("Unexpected error during password verification: %s", e)
             return False
