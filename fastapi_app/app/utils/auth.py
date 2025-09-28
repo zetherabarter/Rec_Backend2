@@ -8,25 +8,28 @@ from ..core.config import settings
 
 # Password context for hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+MAX_BCRYPT_LENGTH = 72  # bcrypt max bytes
 
 class AuthUtils:
     """Utility class for authentication operations"""
-    
+
     @staticmethod
     def generate_otp(length: int = 6) -> str:
         """Generate a random OTP"""
         return ''.join(random.choices(string.digits, k=length))
-    
+
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash a password"""
-        return pwd_context.hash(password)
-    
+        """Hash a password (truncated to 72 bytes for bcrypt)"""
+        truncated_password = password[:MAX_BCRYPT_LENGTH]
+        return pwd_context.hash(truncated_password)
+
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Verify a password against its hash"""
-        return pwd_context.verify(plain_password, hashed_password)
-    
+        """Verify a password against its hash (truncate to 72 bytes)"""
+        truncated_password = plain_password[:MAX_BCRYPT_LENGTH]
+        return pwd_context.verify(truncated_password, hashed_password)
+
     @staticmethod
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
         """Create JWT access token"""
@@ -39,7 +42,7 @@ class AuthUtils:
         to_encode.update({"exp": expire, "type": "access"})
         encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
         return encoded_jwt
-    
+
     @staticmethod
     def create_refresh_token(data: dict) -> str:
         """Create JWT refresh token"""
@@ -48,7 +51,7 @@ class AuthUtils:
         to_encode.update({"exp": expire, "type": "refresh"})
         encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
         return encoded_jwt
-    
+
     @staticmethod
     def verify_token(token: str) -> Optional[dict]:
         """Verify and decode JWT token"""
@@ -57,12 +60,12 @@ class AuthUtils:
             return payload
         except jwt.PyJWTError:
             return None
-    
+
     @staticmethod
     def get_otp_expiry() -> datetime:
         """Get OTP expiry time (5 minutes from now)"""
         return datetime.utcnow() + timedelta(minutes=5)
-    
+
     @staticmethod
     def is_otp_expired(expires_at: datetime) -> bool:
         """Check if OTP is expired"""
