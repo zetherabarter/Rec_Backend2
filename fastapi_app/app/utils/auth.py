@@ -64,12 +64,30 @@ class AuthUtils:
         Returns False if verification fails or an internal error occurs.
         """
         try:
+            # First, try verifying the password as provided. This preserves
+            # compatibility with existing stored hashes that were created
+            # without normalization/truncation.
+            try:
+                direct_ok = pwd_context.verify(plain_password, hashed_password)
+            except ValueError as e:
+                # Underlying bcrypt backend may raise ValueError for inputs
+                # > 72 bytes. Log and treat as a non-match so we can attempt
+                # the normalized variant below.
+                logger.warning("Direct password verify raised ValueError: %s", e)
+                direct_ok = False
+
+            if direct_ok:
+                return True
+
+            # If direct verification failed, try normalized/truncated variant.
             normalized = AuthUtils._normalize_password_for_bcrypt(plain_password)
-            return pwd_context.verify(normalized, hashed_password)
-        except ValueError as e:
-            # passlib raises ValueError for inputs too long for the backend
-            logger.warning("Password verification failed due to value error: %s", e)
-            return False
+            try:
+                normalized_ok = pwd_context.verify(normalized, hashed_password)
+            except ValueError as e:
+                logger.warning("Normalized password verify raised ValueError: %s", e)
+                return False
+
+            return normalized_ok
         except Exception as e:
             logger.exception("Unexpected error during password verification: %s", e)
             return False
